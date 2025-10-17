@@ -63,23 +63,20 @@ def main(argv=sys.argv[1:]):
             LOG.warning('Invalid PID %(pid)d in %(file)s, removing stale PID file',
                        {'pid': pid, 'file': pid_file})
             stale_pid_file = True
+        elif utils.is_pid_running(pid):
+            # Process is still running
+            LOG.error('server PID #%(pid)d still running', {'pid': pid})
+            return 1
         else:
-            # Check if process exists using os.kill with signal 0
-            try:
-                os.kill(pid, 0)
-                # Process exists
-                LOG.error('server PID #%(pid)d still running', {'pid': pid})
-                return 1
-            except OSError:
-                # Process does not exist, PID file is stale
-                LOG.warning('Removing stale PID file %(file)s with PID %(pid)d',
-                           {'file': pid_file, 'pid': pid})
-                stale_pid_file = True
+            # Process does not exist, PID file is stale
+            LOG.warning('Removing stale PID file %(file)s with PID %(pid)d',
+                       {'file': pid_file, 'pid': pid})
+            stale_pid_file = True
 
     except (FileNotFoundError, IOError):
         # PID file doesn't exist, this is fine
         pass
-    except (ValueError, TypeError):
+    except ValueError:
         # PID file contains invalid data
         LOG.warning('PID file %(file)s contains invalid data, removing',
                    {'file': pid_file})
@@ -89,7 +86,7 @@ def main(argv=sys.argv[1:]):
     if stale_pid_file:
         try:
             os.unlink(pid_file)
-        except (FileNotFoundError, OSError):
+        except OSError:
             pass
 
     def wrap_with_pidfile(func, pid):
