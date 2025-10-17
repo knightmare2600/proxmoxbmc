@@ -52,18 +52,45 @@ def main(argv=sys.argv[1:]):
     
         
 
+    # Check if there's a stale PID file
+    stale_pid_file = False
     try:
         with open(pid_file) as f:
-            pid = int(f.read())
+            pid = int(f.read().strip())
 
-        os.kill(pid, 0)
+        # Validate PID is a positive integer
+        if pid <= 0:
+            LOG.warning('Invalid PID %(pid)d in %(file)s, removing stale PID file',
+                       {'pid': pid, 'file': pid_file})
+            stale_pid_file = True
+        else:
+            # Check if process exists using os.kill with signal 0
+            try:
+                os.kill(pid, 0)
+                # Process exists
+                LOG.error('server PID #%(pid)d still running', {'pid': pid})
+                return 1
+            except OSError:
+                # Process does not exist, PID file is stale
+                LOG.warning('Removing stale PID file %(file)s with PID %(pid)d',
+                           {'file': pid_file, 'pid': pid})
+                stale_pid_file = True
 
-    except Exception:
+    except (FileNotFoundError, IOError):
+        # PID file doesn't exist, this is fine
         pass
+    except (ValueError, TypeError):
+        # PID file contains invalid data
+        LOG.warning('PID file %(file)s contains invalid data, removing',
+                   {'file': pid_file})
+        stale_pid_file = True
 
-    else:
-        LOG.error('server PID #%(pid)d still running', {'pid': pid})
-        return 1
+    # Remove stale PID file if needed
+    if stale_pid_file:
+        try:
+            os.unlink(pid_file)
+        except (FileNotFoundError, OSError):
+            pass
 
     def wrap_with_pidfile(func, pid):
         dir_name = os.path.dirname(pid_file)
